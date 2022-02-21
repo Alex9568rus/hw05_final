@@ -194,6 +194,7 @@ class PaginatorTest(TestCase):
     def setUp(self):
         self.authorized_client = Client()
         self.authorized_client.force_login(PaginatorTest.user)
+        cache.clear()
 
     def test_paginator(self):
         """Проверка паджинатора на стриницах index, group_list и profile."""
@@ -236,6 +237,7 @@ class ThirdTaskTest(TestCase):
     def setUp(self):
         self.authorized_client = Client()
         self.authorized_client.force_login(ThirdTaskTest.user)
+        cache.clear()
 
     def test_post_exist_on_page_index(self):
         """Пост появился на странице index."""
