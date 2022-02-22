@@ -26,7 +26,8 @@ class PostsURLTests(TestCase):
         )
         cls.private_urls = (
             ('/create/', 'posts/create_post.html'),
-            (f'/posts/{cls.post.id}/edit/', 'posts/create_post.html')
+            (f'/posts/{cls.post.id}/edit/', 'posts/create_post.html'),
+            ('/follow/', 'posts/follow.html')
         )
 
     def setUp(self):
@@ -61,7 +62,7 @@ class PostsURLTests(TestCase):
         """Проверка доступности страниц для авторизованного
         пользователя и их шаблонов.
         """
-        for url, template in PostsURLTests.private_urls:
+        for url, template in self.private_urls:
             with self.subTest(url=url):
                 response = self.authorized_client.get(url)
                 self.assertEqual(response.status_code, HTTPStatus.OK)

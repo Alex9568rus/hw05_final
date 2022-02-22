@@ -50,7 +50,8 @@ def profile(request, username):
             user=request.user,
             author=author
         ).exists()
-    following = False
+    else:
+        following = False
     context = {
         'author': author,
         'posts_count': posts_count,
@@ -107,8 +108,7 @@ def post_edit(request, post_id):
         instance=post
     )
     if form.is_valid():
-        red_post = form.save(commit=False)
-        red_post.save()
+        form.save()
         return redirect('posts:post_detail', post_id=post_id)
     context = {
         'form': form,

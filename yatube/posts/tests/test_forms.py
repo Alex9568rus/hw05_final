@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from ..models import Post, Group, User
+from ..models import Post, Group, User, Comment, Follow
 
 
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
@@ -18,7 +18,10 @@ class PostsFormsTest(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='auth')
+        # комментрирующий и подписанный юзер
+        cls.some = User.objects.create_user(username='somebody')
+        # автор поста (на, которого подписан юзер somebody)
+        cls.author = User.objects.create_user(username='Nameless')
         cls.group_one = Group.objects.create(
             title='название',
             slug='test-slug',
@@ -31,8 +34,17 @@ class PostsFormsTest(TestCase):
         )
         cls.post = Post.objects.create(
             text='Тестовый текст',
-            author=cls.user,
+            author=cls.author,
             group=cls.group_one
+        )
+        cls.comment = Comment.objects.create(
+            post=cls.post,
+            author=cls.some,
+            text='great'
+        )
+        cls.following = Follow.objects.create(
+            user=cls.some,
+            author=cls.author
         )
 
     @classmethod
@@ -42,8 +54,10 @@ class PostsFormsTest(TestCase):
 
     def setUp(self):
         self.guest_client = Client()
-        self.authorized_client = Client()
-        self.authorized_client.force_login(PostsFormsTest.user)
+        self.some_client = Client()
+        self.some_client.force_login(PostsFormsTest.some)
+        self.author_client = Client()
+        self.author_client.force_login(PostsFormsTest.author)
 
     def test_create_post_in_db(self):
         """Проверка созданиея нового поста с картинкой в БД."""
@@ -67,20 +81,21 @@ class PostsFormsTest(TestCase):
             'group': self.group_one.id,
             'image': uploaded
         }
-        response = self.authorized_client.post(
+        response = self.author_client.post(
             reverse('posts:post_create'),
             data=form_data,
             follow=True
         )
         self.assertRedirects(response, reverse(
-            'posts:profile', kwargs={'username': self.user}
-        ))
+            'posts:profile', kwargs={'username': self.author}
+            )
+        )
         self.assertEqual(Post.objects.count(), posts_count + 1)
         new_post = Post.objects.latest()
         comparison_dict = {
             form_data['text']: new_post.text,
             form_data['group']: new_post.group.id,
-            self.user: new_post.author,
+            self.author: new_post.author,
             # Добавлено в 6 спринте
             form_data['image']: uploaded
         }
@@ -95,7 +110,7 @@ class PostsFormsTest(TestCase):
             'text': 'Update post',
             'group': self.group_two.id
         }
-        response = self.authorized_client.post(
+        response = self.author_client.post(
             reverse('posts:post_edit', args=(self.post.id,)),
             data=form_data,
             follow=True
@@ -118,3 +133,82 @@ class PostsFormsTest(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.FOUND)
         self.assertRedirects(response, '/auth/login/?next=/create/')
         self.assertEqual(Post.objects.count(), posts_count)
+
+    # Исправления: пункты 2, 5
+    def test_guest_cant_create_comment_and_following(self):
+        """Неавторизованный пользователь не может
+        комментировать и подписываться.
+        """
+        url_redirect = {
+            reverse('posts:add_comment', args=(self.post.id,)): (
+                f'/auth/login/?next=/posts/{self.post.id}/comment/'
+            ),
+            reverse(
+                'posts:profile_follow', args=(self.author,)
+            ): (
+                f'/auth/login/?next=/profile/{self.author}/follow/'
+            )
+        }
+        for url, redirected in url_redirect.items():
+            with self.subTest(url=url):
+                response = self.guest_client.get(url)
+                self.assertEqual(response.status_code, HTTPStatus.FOUND)
+                self.assertRedirects(response, redirected)
+
+    # Исправления: пункт 1
+    def test_authorized_user_can_create_comment(self):
+        """Авторизованный пользователь может оставить комментарий."""
+        form_data = {
+            'post': self.post,
+            'author': self.some,
+            'text': 'awesome'
+        }
+        response = self.some_client.post(
+            reverse('posts:add_comment', args=(self.post.id,)),
+            data=form_data,
+            follow=True
+        )
+        self.assertRedirects(
+            response, reverse('posts:post_detail', args=(self.post.id,))
+        )
+        new_comment = Comment.objects.latest('id')
+        comp_dict = {
+            form_data['author']: new_comment.author,
+            form_data['post']: new_comment.post,
+            form_data['text']: new_comment.text
+        }
+        for field, value in comp_dict.items():
+            with self.subTest(field=field):
+                self.assertEqual(field, value)
+
+    # Исправления: пункт 3, 4
+    def test_authorized_user_can_follow_unfollow(self):
+        """Авторизованный пользователь может подписаться/отписаться
+        на/от автора.
+        """
+        response = self.some_client.get(
+            reverse('posts:profile_follow', args=(self.author.username,))
+        )
+        self.assertRedirects(
+            response, reverse('posts:profile', args=(self.author,))
+        )
+        new_follower = Follow.objects.latest('id')
+        comp_dict = {
+            self.some: new_follower.user,
+            self.author: new_follower.author
+        }
+        for field, value in comp_dict.items():
+            with self.subTest(field=field):
+                self.assertEqual(field, value)
+        response_unsub = self.some_client.get(
+            reverse('posts:profile_unfollow', args=(self.author.username,))
+        )
+        self.assertRedirects(
+            response_unsub, reverse('posts:profile', args=(self.author,))
+        )
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.some,
+                author=self.author
+            ).exists()
+        )
