@@ -1,7 +1,6 @@
 import shutil
 import tempfile
 
-from http import HTTPStatus
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
@@ -18,9 +17,8 @@ class PostsFormsTest(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # комментрирующий и подписанный юзер
+        cls.follower = User.objects.create_user(username='follower')
         cls.some = User.objects.create_user(username='somebody')
-        # автор поста (на, которого подписан юзер somebody)
         cls.author = User.objects.create_user(username='Nameless')
         cls.group_one = Group.objects.create(
             title='название',
@@ -54,6 +52,8 @@ class PostsFormsTest(TestCase):
 
     def setUp(self):
         self.guest_client = Client()
+        self.foll_client = Client()
+        self.foll_client.force_login(PostsFormsTest.follower)
         self.some_client = Client()
         self.some_client.force_login(PostsFormsTest.some)
         self.author_client = Client()
@@ -62,7 +62,6 @@ class PostsFormsTest(TestCase):
     def test_create_post_in_db(self):
         """Проверка созданиея нового поста с картинкой в БД."""
         posts_count = Post.objects.count()
-        # Добавлено в 6 спринте
         small_gif = (
             b'\x47\x49\x46\x38\x39\x61\x02\x00'
             b'\x01\x00\x80\x00\x00\x00\x00\x00'
@@ -86,9 +85,8 @@ class PostsFormsTest(TestCase):
             data=form_data,
             follow=True
         )
-        self.assertRedirects(
-            response, reverse(
-                'posts:profile', kwargs={'username': self.author}
+        self.assertRedirects(response, reverse(
+            'posts:profile', kwargs={'username': self.author}
             )
         )
         self.assertEqual(Post.objects.count(), posts_count + 1)
@@ -97,7 +95,6 @@ class PostsFormsTest(TestCase):
             form_data['text']: new_post.text,
             form_data['group']: new_post.group.id,
             self.author: new_post.author,
-            # Добавлено в 6 спринте
             form_data['image']: uploaded
         }
         for field, new_field in comparison_dict.items():
@@ -111,7 +108,7 @@ class PostsFormsTest(TestCase):
             'text': 'Update post',
             'group': self.group_two.id
         }
-        response = self.author_client.post(
+        self.author_client.post(
             reverse('posts:post_edit', args=(self.post.id,)),
             data=form_data,
             follow=True
@@ -125,52 +122,69 @@ class PostsFormsTest(TestCase):
             with self.subTest(field=field):
                 self.assertEqual(field, new_field)
         self.assertEqual(Post.objects.count(), posts_count)
-        self.assertEqual(response.status_code, HTTPStatus.OK)
 
     def test_guest_cant_create_post(self):
         """Неавторизованный пользователь не сможет создать пост."""
-        posts_count = Post.objects.count()
-        response = self.guest_client.get(reverse('posts:post_create'))
-        self.assertEqual(response.status_code, HTTPStatus.FOUND)
-        self.assertRedirects(response, '/auth/login/?next=/create/')
-        self.assertEqual(Post.objects.count(), posts_count)
-
-    # Исправления: пункты 2, 5
-    def test_guest_cant_create_comment_and_following(self):
-        """Неавторизованный пользователь не может
-        комментировать и подписываться.
-        """
-        url_redirect = {
-            reverse('posts:add_comment', args=(self.post.id,)): (
-                f'/auth/login/?next=/posts/{self.post.id}/comment/'
-            ),
-            reverse(
-                'posts:profile_follow', args=(self.author,)
-            ): (
-                f'/auth/login/?next=/profile/{self.author}/follow/'
-            )
+        form_data = {
+            'text': 'Ничего не получится',
+            'author': self.author,
+            'group': self.group_one
         }
-        for url, redirected in url_redirect.items():
-            with self.subTest(url=url):
-                response = self.guest_client.get(url)
-                self.assertEqual(response.status_code, HTTPStatus.FOUND)
-                self.assertRedirects(response, redirected)
+        posts_count = Post.objects.count()
+        response = self.guest_client.post(
+            reverse('posts:post_create'),
+            data=form_data,
+            follow=True
+        )
+        new_count = Post.objects.count()
+        self.assertEqual(posts_count, new_count)
+        self.assertNotIn('post', response.context)
 
-    # Исправления: пункт 1
+    def test_guest_cant_create_comment(self):
+        """Неавторизованный пользователь не может комментировать."""
+        comments_count = Comment.objects.count()
+        form_data = {
+            'post': self.post,
+            'author': self.some,
+            'text': 'комментарий, которого не будет'
+        }
+        response = self.guest_client.post(
+            reverse('posts:add_comment', args=(self.post.id,)),
+            data=form_data,
+            follow=True
+            )
+        self.assertNotIn('comment', response.context)
+        new_count = Comment.objects.count()
+        self.assertEqual(comments_count, new_count)
+
+    def test_guest_cant_follow(self):
+        """Неавторизованный пользователь не может подписаться."""
+        following_count = Follow.objects.count()
+        form_data = {
+            'user': 'user_1',
+            'author': self.author
+        }
+        response = self.guest_client.post(
+            'posts:profile_follow', args=(self.author,),
+            data=form_data,
+            follow=True
+        )
+        new_count = Follow.objects.count()
+        self.assertNotIn('following', response.context)
+        self.assertEqual(following_count, new_count)
+
     def test_authorized_user_can_create_comment(self):
         """Авторизованный пользователь может оставить комментарий."""
+        comments_count = Comment.objects.count()
         form_data = {
             'post': self.post,
             'author': self.some,
             'text': 'awesome'
         }
-        response = self.some_client.post(
+        self.some_client.post(
             reverse('posts:add_comment', args=(self.post.id,)),
             data=form_data,
             follow=True
-        )
-        self.assertRedirects(
-            response, reverse('posts:post_detail', args=(self.post.id,))
         )
         new_comment = Comment.objects.latest('id')
         comp_dict = {
@@ -181,35 +195,41 @@ class PostsFormsTest(TestCase):
         for field, value in comp_dict.items():
             with self.subTest(field=field):
                 self.assertEqual(field, value)
+        new_count = Comment.objects.count()
+        self.assertEqual(new_count, comments_count + 1)
 
-    # Исправления: пункт 3, 4
-    def test_authorized_user_can_follow_unfollow(self):
-        """Авторизованный пользователь может подписаться/отписаться
-        на/от автора.
-        """
-        response = self.some_client.get(
-            reverse('posts:profile_follow', args=(self.author.username,))
-        )
-        self.assertRedirects(
-            response, reverse('posts:profile', args=(self.author,))
+    def test_authorized_user_can_follow(self):
+        """Авторизованный пользователь может подписаться на автора."""
+        following_count = Follow.objects.count()
+        form_data = {
+            'user': self.follower,
+            'author': self.author
+        }
+        self.foll_client.post(
+            reverse('posts:profile_follow', args=(self.author.username,)),
+            data=form_data,
+            follow=True
         )
         new_follower = Follow.objects.latest('id')
         comp_dict = {
-            self.some: new_follower.user,
+            self.follower: new_follower.user,
             self.author: new_follower.author
         }
         for field, value in comp_dict.items():
             with self.subTest(field=field):
                 self.assertEqual(field, value)
-        response_unsub = self.some_client.get(
+        new_count = Follow.objects.count()
+        self.assertEqual(new_count, following_count + 1)
+
+    def test_authorized_user_can_unfollow(self):
+        """Авторизованный пользователь может отписаться от автора."""
+        Follow.objects.create(
+            user=self.follower,
+            author=self.author
+        )
+        foll_count = Follow.objects.count()
+        self.foll_client.get(
             reverse('posts:profile_unfollow', args=(self.author.username,))
         )
-        self.assertRedirects(
-            response_unsub, reverse('posts:profile', args=(self.author,))
-        )
-        self.assertFalse(
-            Follow.objects.filter(
-                user=self.some,
-                author=self.author
-            ).exists()
-        )
+        new_count = Follow.objects.count()
+        self.assertEqual(new_count, foll_count - 1)

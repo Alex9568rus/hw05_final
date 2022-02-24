@@ -20,7 +20,6 @@ class PostsViewsTest(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # Добавлено в 6 спринте
         cls.small_gif = (
             b'\x47\x49\x46\x38\x39\x61\x02\x00'
             b'\x01\x00\x80\x00\x00\x00\x00\x00'
@@ -34,11 +33,8 @@ class PostsViewsTest(TestCase):
             content=cls.small_gif,
             content_type='image/gif'
         )
-        # комментрирующий и подписанный юзер
         cls.some = User.objects.create_user(username='somebody')
-        # автор поста (на, которого подписан юзер somebody)
         cls.author = User.objects.create_user(username='Nameless')
-        # не подписанный на автора
         cls.user = User.objects.create_user(username='not_foll')
         cls.group_one = Group.objects.create(
             title='название',
@@ -116,10 +112,8 @@ class PostsViewsTest(TestCase):
         self.assertEqual(
             response.context['page_obj'][0].group, self.post.group
         )
-        # спринт 6: проверка появления картинки на главной странице
         self.assertEqual(first_object.image, self.post.image)
 
-    # Добавлено в 6 спринте:
     def test_cache_index_page(self):
         """Тестирование использование кеширования"""
         cache.clear()
@@ -142,7 +136,6 @@ class PostsViewsTest(TestCase):
         post_slug = first_post.group.slug
         self.assertEqual(first_post, self.post)
         self.assertEqual(post_slug, self.group_one.slug)
-        # спринт 6: проверка появления картинки на странице группы
         self.assertEqual(first_post.image, self.post.image)
 
     def test_does_not_exist_in_another_group(self):
@@ -163,7 +156,6 @@ class PostsViewsTest(TestCase):
         author_post = first_post.author.username
         self.assertEqual(first_post, self.post)
         self.assertEqual(author_post, self.post.author.username)
-        # спринт 6: проверка появления картинки на странице профайла
         self.assertEqual(first_post.image, self.post.image)
 
     def test_correct_context_post_detail(self):
@@ -178,7 +170,6 @@ class PostsViewsTest(TestCase):
         self.assertIn('comments', response.context)
         comment_post = response.context['comments'][0]
         self.assertEqual(self.comment, comment_post)
-        # спринт 6: проверка появления картинки на странице поста
         self.assertEqual(test_post.image, self.post.image)
 
     def test_new_post_appear_for_follower(self):

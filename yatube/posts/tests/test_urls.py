@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from django.test import TestCase, Client
+from django.urls import reverse
 
 from ..models import Group, Post, User
 
@@ -47,15 +48,38 @@ class PostsURLTests(TestCase):
                 self.assertTemplateUsed(response, template)
 
     def test_redirecting_guest(self):
-        """Перенаправление неавторизованного пользователя"""
+        """Проверка перенаправлений неавторизованного пользователя."""
         redirect_dict = {
             '/create/': '/auth/login/?next=/create/',
             f'/posts/{self.post.id}/edit/':
-            f'/auth/login/?next=/posts/{self.post.id}/edit/'
+            f'/auth/login/?next=/posts/{self.post.id}/edit/',
+            reverse('posts:add_comment', args=(self.post.id,)): (
+                f'/auth/login/?next=/posts/{self.post.id}/comment/'
+            ),
+            reverse(
+                'posts:profile_follow', args=(self.user,)
+            ): (
+                f'/auth/login/?next=/profile/{self.user}/follow/'
+            )
         }
         for url, way in redirect_dict.items():
             with self.subTest(url=url):
                 response = self.guest_client.get(url)
+                self.assertRedirects(response, way)
+
+    def test_redirecting_authorized(self):
+        """Проверка перенаправлений авторизованного пользователя."""
+        redirect_dict = {
+            reverse('posts:profile_follow', args=(self.user,)): (
+                reverse('posts:profile', args=(self.user,))
+            ),
+            reverse('posts:profile_unfollow', args=(self.user,)): (
+                reverse('posts:profile', args=(self.user,))
+            )
+        }
+        for url, way in redirect_dict.items():
+            with self.subTest(url=url):
+                response = self.authorized_client.get(url)
                 self.assertRedirects(response, way)
 
     def test_private_urls(self):
@@ -80,5 +104,4 @@ class PostsURLTests(TestCase):
         """Тест для несуществующей страницы."""
         response = self.guest_client.get('/unexisting_page/')
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
-        # Добавлено в 6 спринте (Финальное задание 1)
         self.assertTemplateUsed(response, 'core/404.html')
