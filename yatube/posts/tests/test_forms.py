@@ -85,9 +85,9 @@ class PostsFormsTest(TestCase):
             data=form_data,
             follow=True
         )
-        self.assertRedirects(response, reverse(
-            'posts:profile', kwargs={'username': self.author}
-            )
+        self.assertRedirects(
+            response,
+            reverse('posts:profile', kwargs={'username': self.author})
         )
         self.assertEqual(Post.objects.count(), posts_count + 1)
         new_post = Post.objects.latest()
@@ -152,7 +152,7 @@ class PostsFormsTest(TestCase):
             reverse('posts:add_comment', args=(self.post.id,)),
             data=form_data,
             follow=True
-            )
+        )
         self.assertNotIn('comment', response.context)
         new_count = Comment.objects.count()
         self.assertEqual(comments_count, new_count)
