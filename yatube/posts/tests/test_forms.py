@@ -160,14 +160,8 @@ class PostsFormsTest(TestCase):
     def test_guest_cant_follow(self):
         """Неавторизованный пользователь не может подписаться."""
         following_count = Follow.objects.count()
-        form_data = {
-            'user': 'user_1',
-            'author': self.author
-        }
         response = self.guest_client.post(
-            'posts:profile_follow', args=(self.author,),
-            data=form_data,
-            follow=True
+            'posts:profile_follow', args=(self.author,)
         )
         new_count = Follow.objects.count()
         self.assertNotIn('following', response.context)
@@ -201,14 +195,8 @@ class PostsFormsTest(TestCase):
     def test_authorized_user_can_follow(self):
         """Авторизованный пользователь может подписаться на автора."""
         following_count = Follow.objects.count()
-        form_data = {
-            'user': self.follower,
-            'author': self.author
-        }
         self.foll_client.post(
-            reverse('posts:profile_follow', args=(self.author.username,)),
-            data=form_data,
-            follow=True
+            reverse('posts:profile_follow', args=(self.author.username,))
         )
         new_follower = Follow.objects.latest('id')
         comp_dict = {
@@ -223,12 +211,8 @@ class PostsFormsTest(TestCase):
 
     def test_authorized_user_can_unfollow(self):
         """Авторизованный пользователь может отписаться от автора."""
-        Follow.objects.create(
-            user=self.follower,
-            author=self.author
-        )
         foll_count = Follow.objects.count()
-        self.foll_client.get(
+        self.some_client.get(
             reverse('posts:profile_unfollow', args=(self.author.username,))
         )
         new_count = Follow.objects.count()

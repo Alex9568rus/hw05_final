@@ -57,6 +57,11 @@ class PostsURLTests(TestCase):
                 f'/auth/login/?next=/posts/{self.post.id}/comment/'
             ),
             reverse(
+                'posts:profile_unfollow', args=(self.user,)
+            ): (
+                f'/auth/login/?next=/profile/{self.user}/unfollow/'
+            ),
+            reverse(
                 'posts:profile_follow', args=(self.user,)
             ): (
                 f'/auth/login/?next=/profile/{self.user}/follow/'
